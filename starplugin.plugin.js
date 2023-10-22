@@ -1,4 +1,4 @@
-//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"0.9.3","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
+//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"0.9.7","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
 
 const ZeresPluginLibrary = BdApi.Plugins.get("ZeresPluginLibrary");
 if (!ZeresPluginLibrary) {
@@ -17,12 +17,13 @@ if (!ZeresPluginLibrary) {
 }
 
 const { WebpackModules, Patcher, Utilities } = ZeresPluginLibrary;
-const GOLD_STAR_TEXT_URL = `https://github.com/dudolf12/starplugin/blob/main/star2.png?raw=true`;
-const GREY_STAR_TEXT_URL = `https://github.com/dudolf12/starplugin/blob/main/star1.png?raw=true`;
-const GOLD_STAR_VOICE_URL = `https://github.com/dudolf12/starplugin/blob/main/star2.png?raw=true`;
-const GREY_STAR_VOICE_URL = `https://github.com/dudolf12/starplugin/blob/main/star1.png?raw=true`;
+const path = require("path");
+const GOLD_STAR_TEXT_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star2_text.png`;
+const GREY_STAR_TEXT_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star1_text.png`;
+const GOLD_STAR_VOICE_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star2_voice.png`;
+const GREY_STAR_VOICE_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star1_voice.png`;
 const AUDIO_URL = 'https://github.com/dudolf12/starplugin/raw/main/audio.mp3';
-const TRASH_ICON_URL = 'https://github.com/dudolf12/starplugin/blob/main/trash.png?raw=true';
+const TRASH_ICON_URL = 'https://raw.githubusercontent.com/dudolf12/starplugin/main/trash.png';
 
 class StarPlugin {
     constructor() {
@@ -35,14 +36,68 @@ class StarPlugin {
 		this.contextMenuListener = this.addContextMenuOption.bind(this);
         this.mutationObserver = null;
 		this.markVoiceChannels = false;
+		this.downloadingFiles = {};
+		this.cachedImages = {};
+		this.fileLocks = {};
+    }
+	
+    async fetchFile(url) {
+        try {
+            const response = await fetch(url, { mode: 'no-cors' });
+            if (!response.ok) {
+                console.error(`Error downloading file: ${url}`);
+                return null;
+            }
+            const blob = await response.blob();
+            return blob;
+        } catch (error) {
+            console.error(`Error downloading file: ${url}`, error);
+            return null;
+        }
     }
 
     start() {
+        this.downloadAndCacheFiles();
         this.addContextMenuOption();
 		this.setupMutationObserver();
+		this.downloadAndCacheFiles();
         this.interval = setInterval(() => {
             this.checkForUnreadMessages();
         }, 1000);
+    }
+	
+    async downloadAndCacheFiles() {
+        this.cachedImages["star2_text.png"] = await this.fetchAndCacheFile(GOLD_STAR_TEXT_URL);
+        this.cachedImages["star1_text.png"] = await this.fetchAndCacheFile(GREY_STAR_TEXT_URL);
+        this.cachedImages["star2_voice.png"] = await this.fetchAndCacheFile(GOLD_STAR_VOICE_URL);
+        this.cachedImages["star1_voice.png"] = await this.fetchAndCacheFile(GREY_STAR_VOICE_URL);
+		this.cachedImages["audio.mp3"] = await this.fetchAndCacheFile(AUDIO_URL);
+		this.cachedImages["trash.png"] = await this.fetchAndCacheFile(TRASH_ICON_URL);
+    }
+	
+    async fetchAndCacheFile(url) {
+        if (this.fileLocks[url]) {
+            await this.fileLocks[url];
+        }
+        try {
+            this.fileLocks[url] = new Promise(async (resolve, reject) => {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    resolve(reader.result);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+            const result = await this.fileLocks[url];
+            return result;
+        } catch (error) {
+            console.error(`Error downloading file: ${url}`, error);
+            return null;
+        } finally {
+            delete this.fileLocks[url];
+        }
     }
 
     stop() {
@@ -78,7 +133,7 @@ class StarPlugin {
     determineChannelType(channel) {
         const ariaLabel = channel.getAttribute('aria-label');
         if (ariaLabel) {
-            const userCountMatch = ariaLabel.match(/, (\d+) użytkownik/);
+            const userCountMatch = ariaLabel.match(/, (\d+)/);
             if (userCountMatch && userCountMatch[1]) {
                 const userCount = parseInt(userCountMatch[1], 10);
                 if (!isNaN(userCount)) {
@@ -104,19 +159,19 @@ class StarPlugin {
             const starImage = document.createElement('img');
             starImage.className = 'star-image';
             if (this.activeChannels[channelId]) {
-                starImage.src = isTextChannel ? GOLD_STAR_TEXT_URL : GOLD_STAR_VOICE_URL;
+                starImage.src = isTextChannel ? this.updateStarImageSrc(GOLD_STAR_TEXT_URL) : this.updateStarImageSrc(GOLD_STAR_VOICE_URL);
             } else {
-                starImage.src = isTextChannel ? GREY_STAR_TEXT_URL : GREY_STAR_VOICE_URL;
+                starImage.src = isTextChannel ? this.updateStarImageSrc(GREY_STAR_TEXT_URL) : this.updateStarImageSrc(GREY_STAR_VOICE_URL);
             }
             starImage.style.width = '24px';
             starImage.style.height = '24px';
             starImage.style.boxSizing = 'border-box';
             starImage.addEventListener('click', () => {
-                if (starImage.src === GOLD_STAR_TEXT_URL || starImage.src === GOLD_STAR_VOICE_URL) {
-                    starImage.src = isTextChannel ? GREY_STAR_TEXT_URL : GREY_STAR_VOICE_URL;
+                if (starImage.src === this.updateStarImageSrc(GOLD_STAR_TEXT_URL) || starImage.src === this.updateStarImageSrc(GOLD_STAR_VOICE_URL)) {
+                    starImage.src = isTextChannel ? this.updateStarImageSrc(GREY_STAR_TEXT_URL) : this.updateStarImageSrc(GREY_STAR_VOICE_URL);
                     delete this.activeChannels[channelId];
                 } else {
-                    starImage.src = isTextChannel ? GOLD_STAR_TEXT_URL : GOLD_STAR_VOICE_URL;
+                    starImage.src = isTextChannel ? this.updateStarImageSrc(GOLD_STAR_TEXT_URL) : this.updateStarImageSrc(GOLD_STAR_VOICE_URL);
                     this.activeChannels[channelId] = { read: true, text: isTextChannel.toString() };
                 }
                 BdApi.saveData('StarPlugin', 'starredChannels', this.activeChannels);
@@ -124,6 +179,36 @@ class StarPlugin {
             iconContainer.innerHTML = '';
             iconContainer.appendChild(starImage);
         });
+    }
+	
+    getFilenameFromUrl(url) {
+        return url.split('/').pop().split('?')[0];
+    }
+	
+    getMimeTypeFromUrl(url) {
+        const extension = url.split('.').pop().toLowerCase();
+        switch (extension) {
+            case 'png':
+                return 'image/png';
+            case 'jpg':
+            case 'jpeg':
+                return 'image/jpeg';
+            case 'mp3':
+                return 'audio/mpeg';
+            default:
+                return 'application/octet-stream'; 
+        }
+    }
+
+    updateStarImageSrc(url) {
+        const filename = this.getFilenameFromUrl(url);
+        if (this.cachedImages[filename]) {
+            return this.cachedImages[filename];
+        } else {
+            console.error(`File ${filename} is not cached. Initiating file download again...`);
+            this.downloadAndCacheFiles(); 
+            return url; 
+        }
     }
 
     checkForUnreadMessages() {
@@ -138,7 +223,7 @@ class StarPlugin {
             if (this.activeChannels[channelId] && this.activeChannels[channelId].text === "false") {
                 this.AUDIO_URL.play();
                 const channelName = this.getChannelNameById(channelId);
-                if (channelName) {
+                if (channelName) {;
                     this.showVoiceChannelNotification(channelName);
                 } else {
                 }
@@ -167,15 +252,16 @@ class StarPlugin {
         const ChannelStore = BdApi.findModuleByProps("getChannel");
         const channel = ChannelStore.getChannel(channelId);
         if (!channel) {
+            console.error(`Cannot find channel for ID: ${channelId}`);
         }
         return channel ? channel.name : null;
     }
 
     showNotification(channelName) {
         if (!("Notification" in window)) {
+            console.error("This browser does not support system notifications.");
             return;
         }
-
         if (Notification.permission === "granted") {
             this.createNotification(channelName);
         } else if (Notification.permission !== "denied") {
@@ -199,7 +285,6 @@ class StarPlugin {
                 if (permission === "granted") {
                     this.createVoiceChannelNotification(channelName);
                 } else {
-                    console.warn("Notification permissions have been denied.");
                 }
             });
         }
@@ -207,20 +292,18 @@ class StarPlugin {
     
     createVoiceChannelNotification(channelName) {
         const notification = new Notification("Voice channel update", {
-            body: `Someone has accessed the voice channel: ${channelName}`,
+            body: `Someone has join the voice channel: ${channelName}`,
             silent: true
         });
         notification.onclick = () => {
             window.focus();
             const channel = BdApi.findModuleByProps("getChannel").getChannel(this.activeChannelId);
             if (!channel) {
-                console.error("Cannot find channel for ID:", this.activeChannelId);
                 return;
             }
             const serverId = channel.guild_id;
             const serverIcon = document.querySelector(`div[data-list-item-id="guildsnav___${serverId}"]`);
             if (!serverIcon) {
-                console.error("Could not find server icon for ID:", serverId);
                 return;
             }
             serverIcon.click();
@@ -336,10 +419,10 @@ class StarPlugin {
         markVoiceChannelsCheckbox.checked = this.markVoiceChannels;
         markVoiceChannelsCheckbox.disabled = true;
         const label = document.createElement("label");
-        label.style.color = "white"; 
-        label.style.marginBottom = "30px"; 
+        label.style.color = "white";
+        label.style.marginBottom = "30px";
         const labelText = document.createElement("span");
-        labelText.style.textDecoration = "line-through"; 
+        labelText.style.textDecoration = "line-through";
         labelText.style.textDecorationColor = "black";
         labelText.textContent = " Mark voice channels ";
         label.appendChild(markVoiceChannelsCheckbox);

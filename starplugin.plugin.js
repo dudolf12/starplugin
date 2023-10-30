@@ -1,4 +1,4 @@
-//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"0.9.7","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
+//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"0.9.8","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
 
 const ZeresPluginLibrary = BdApi.Plugins.get("ZeresPluginLibrary");
 if (!ZeresPluginLibrary) {
@@ -22,7 +22,7 @@ const GOLD_STAR_TEXT_URL = `https://raw.githubusercontent.com/dudolf12/starplugi
 const GREY_STAR_TEXT_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star1_text.png`;
 const GOLD_STAR_VOICE_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star2_voice.png`;
 const GREY_STAR_VOICE_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star1_voice.png`;
-const AUDIO_URL = 'https://github.com/dudolf12/starplugin/raw/main/audio.mp3';
+const AUDIO_URL = 'https://raw.githubusercontent.com/dudolf12/starplugin/main/audio.mp3';
 const TRASH_ICON_URL = 'https://raw.githubusercontent.com/dudolf12/starplugin/main/trash.png';
 
 class StarPlugin {
@@ -61,6 +61,7 @@ class StarPlugin {
         this.addContextMenuOption();
 		this.setupMutationObserver();
 		this.downloadAndCacheFiles();
+		this.loadSettings();
         this.interval = setInterval(() => {
             this.checkForUnreadMessages();
         }, 1000);
@@ -77,7 +78,7 @@ class StarPlugin {
 	
     async fetchAndCacheFile(url) {
         if (this.fileLocks[url]) {
-            await this.fileLocks[url];
+            await this.fileLocks[url]; 
         }
         try {
             this.fileLocks[url] = new Promise(async (resolve, reject) => {
@@ -110,7 +111,7 @@ class StarPlugin {
     }
 	
     setupMutationObserver() {
-        const targetSelector = 'div.scroller-1ox3I2.scrollerBase-1Pkza4';
+        const targetSelector = 'div.scroller_f0f183.scrollerBase_dc3aa9';
         const targetNode = document.querySelector(targetSelector);
         if (!targetNode) {
             setTimeout(() => this.setupMutationObserver(), 1000);
@@ -150,7 +151,7 @@ class StarPlugin {
         if (!this.isCurrentServerWhitelisted()) return;
         let channels = document.querySelectorAll('[data-list-item-id^="channels___"]');
         channels.forEach(channel => {
-            const iconContainer = channel.querySelector('.iconContainer-21RCa3');
+            const iconContainer = channel.querySelector('.iconContainer__3f9b0');
             if (!iconContainer) return;
             if (iconContainer.querySelector('img.star-image')) return;
             const channelId = channel.getAttribute('data-list-item-id').replace('channels___', '');
@@ -345,7 +346,7 @@ class StarPlugin {
     }
 
     getCurrentServerName() {
-        const serverNameElement = document.querySelector('.lineClamp1-1voJi7.text-md-semibold-2VMhBr.name-3Uvkvr');
+        const serverNameElement = document.querySelector('.lineClamp1__92431.name_c08dbc');
         return serverNameElement ? serverNameElement.textContent : null;
     }
 
@@ -370,9 +371,21 @@ class StarPlugin {
         window.addEventListener("contextmenu", (event) => {
             const target = event.target.closest('[role="treeitem"]');
             if (target && target.getAttribute('data-list-item-id').includes('guildsnav___')) {
-                setTimeout(() => {
-                    this.addWhitelistButtonToContextMenu(target.getAttribute('aria-label'));
-                }, 5);
+                const observer = new MutationObserver((mutations, obs) => {
+                    for (let mutation of mutations) {
+                        for (let node of mutation.addedNodes) {
+                            if (node instanceof HTMLElement && node.matches('.layerContainer_d5a653 .theme-dark.layer_ec16dd')) {
+                                this.addWhitelistButtonToContextMenu(target.getAttribute('aria-label'));
+                                obs.disconnect();
+                                return;
+                            }
+                        }
+                    }
+                });
+                observer.observe(document, {
+                    childList: true,
+                    subtree: true
+                });
             }
         }, true);
     }
@@ -380,7 +393,7 @@ class StarPlugin {
     addWhitelistButtonToContextMenu(serverName) {
         serverName = serverName.trim();
         const now = Date.now();
-        if (now - this.lastContextMenuUpdate < 500) return;
+        if (now - this.lastContextMenuUpdate < 500) return; 
         this.lastContextMenuUpdate = now;
         const contextMenu = document.querySelector('div[role="menu"]');
         if (!contextMenu) {
@@ -391,7 +404,7 @@ class StarPlugin {
             existingMenuItem.remove();
         }
         const menuItem = document.createElement('div');
-        menuItem.classList.add('item-5ApiZt', 'labelContainer-35-WEd', 'colorDefault-2_rLdz', 'starplugin-whitelist-button');
+        menuItem.classList.add('item__183e8', 'labelContainer_bc2861', 'colorDefault__0b482', 'starplugin-whitelist-button');
         menuItem.role = "menuitem";
         menuItem.tabIndex = -1;
         menuItem.setAttribute('data-menu-item', 'true');

@@ -1,4 +1,4 @@
-//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"0.9.8","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
+//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"0.9.9","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
 
 const ZeresPluginLibrary = BdApi.Plugins.get("ZeresPluginLibrary");
 if (!ZeresPluginLibrary) {
@@ -346,7 +346,7 @@ class StarPlugin {
     }
 
     getCurrentServerName() {
-        const serverNameElement = document.querySelector('.lineClamp1__92431.name_c08dbc');
+        const serverNameElement = document.querySelector('.lineClamp1__0ec05.name_c08dbc');
         return serverNameElement ? serverNameElement.textContent : null;
     }
 

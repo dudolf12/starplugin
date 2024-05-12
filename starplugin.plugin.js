@@ -1,4 +1,4 @@
-//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"0.9.9","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
+//META{"name":"StarPlugin","displayName":"StarPlugindev","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"1.02","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
 
 const ZeresPluginLibrary = BdApi.Plugins.get("ZeresPluginLibrary");
 if (!ZeresPluginLibrary) {
@@ -16,7 +16,24 @@ if (!ZeresPluginLibrary) {
     return;
 }
 
-const { WebpackModules, Patcher, Utilities } = ZeresPluginLibrary;
+const XenoLib = BdApi.Plugins.get("XenoLib");
+if (!XenoLib) {
+    BdApi.alert("The missing library", `The 1XenoLib library is required for StarPlugin to run. Click OK to download it.`);
+    require("request").get("https://raw.githubusercontent.com/1Lighty/BetterDiscordPlugins/master/Plugins/1XenoLib.plugin.js", (error, response, body) => {
+        if (error) {
+            console.error("Unable to download 1XenoLib:", error);
+            return;
+        }
+        const fs = require("fs");
+        const path = require("path");
+        const pluginPath = path.join(BdApi.Plugins.folder, "1XenoLib.plugin.js");
+        fs.writeFileSync(pluginPath, body);
+    });
+    return;
+}
+
+const { PluginUtilities, Utilities } = ZeresPluginLibrary;
+const { ContextMenu, Webpack, Patcher } = BdApi;
 const path = require("path");
 const GOLD_STAR_TEXT_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star2_text.png`;
 const GREY_STAR_TEXT_URL = `https://raw.githubusercontent.com/dudolf12/starplugin/main/star1_text.png`;
@@ -32,8 +49,6 @@ class StarPlugin {
         this.activeChannels = BdApi.loadData('StarPlugin', 'starredChannels') || {};
         this.activeChannelId = null;
         this.whitelistedServers = BdApi.loadData('StarPlugin', 'whitelistedServers') || [];
-        this.lastContextMenuUpdate = 0;
-		this.contextMenuListener = this.addContextMenuOption.bind(this);
         this.mutationObserver = null;
 		this.markVoiceChannels = false;
 		this.downloadingFiles = {};
@@ -58,13 +73,26 @@ class StarPlugin {
 
     start() {
         this.downloadAndCacheFiles();
-        this.addContextMenuOption();
-		this.setupMutationObserver();
-		this.downloadAndCacheFiles();
-		this.loadSettings();
+        this.setupMutationObserver();
+		this.patchContextMenu();
+        this.loadSettings();
         this.interval = setInterval(() => {
             this.checkForUnreadMessages();
         }, 1000);
+    }
+    
+    stop() {
+        Patcher.unpatchAll();
+        document.querySelectorAll('.star-image').forEach(el => el.remove());
+        if (this.interval) clearInterval(this.interval);
+        if (this.mutationObserver) {
+            this.mutationObserver.disconnect();
+            this.mutationObserver = null;
+        }
+        const Dispatcher = BdApi.findModuleByProps("dispatch", "unsubscribe");
+        if (Dispatcher) {
+            Dispatcher.unsubscribe("VOICE_STATE_UPDATE", this.voiceStateUpdateHandler);
+        }
     }
 	
     async downloadAndCacheFiles() {
@@ -78,7 +106,8 @@ class StarPlugin {
 	
     async fetchAndCacheFile(url) {
         if (this.fileLocks[url]) {
-            await this.fileLocks[url]; 
+            console.log(`file is downloading ${url}. Waiting...`);
+            await this.fileLocks[url];
         }
         try {
             this.fileLocks[url] = new Promise(async (resolve, reject) => {
@@ -100,18 +129,9 @@ class StarPlugin {
             delete this.fileLocks[url];
         }
     }
-
-    stop() {
-        document.querySelectorAll('.star-image').forEach(el => el.remove());
-        window.removeEventListener("contextmenu", this.contextMenuListener);
-        clearInterval(this.interval);
-        if (this.mutationObserver) {
-            this.mutationObserver.disconnect();
-        }
-    }
 	
     setupMutationObserver() {
-        const targetSelector = 'div.scroller_f0f183.scrollerBase_dc3aa9';
+        const targetSelector = 'div.scroller__1f498.scrollerBase_f742b2';
         const targetNode = document.querySelector(targetSelector);
         if (!targetNode) {
             setTimeout(() => this.setupMutationObserver(), 1000);
@@ -148,22 +168,34 @@ class StarPlugin {
     }
 
     addStarToChannels() {
-        if (!this.isCurrentServerWhitelisted()) return;
+        if (!this.isCurrentServerWhitelisted()) {
+            return;
+        }
+    
         let channels = document.querySelectorAll('[data-list-item-id^="channels___"]');
         channels.forEach(channel => {
-            const iconContainer = channel.querySelector('.iconContainer__3f9b0');
-            if (!iconContainer) return;
-            if (iconContainer.querySelector('img.star-image')) return;
+            const iconContainer = channel.querySelector('.iconContainer__6a580');
+            if (!iconContainer) {
+                return;
+            }
+            if (iconContainer.querySelector('img.star-image')) {
+                return;
+            }
             const channelId = channel.getAttribute('data-list-item-id').replace('channels___', '');
             const isTextChannel = this.determineChannelType(channel);
-            if (!isTextChannel && !this.markVoiceChannels) return;
+            if (!isTextChannel && !this.markVoiceChannels) {
+                return;
+            }
+    
             const starImage = document.createElement('img');
             starImage.className = 'star-image';
+            
             if (this.activeChannels[channelId]) {
                 starImage.src = isTextChannel ? this.updateStarImageSrc(GOLD_STAR_TEXT_URL) : this.updateStarImageSrc(GOLD_STAR_VOICE_URL);
             } else {
                 starImage.src = isTextChannel ? this.updateStarImageSrc(GREY_STAR_TEXT_URL) : this.updateStarImageSrc(GREY_STAR_VOICE_URL);
             }
+    
             starImage.style.width = '24px';
             starImage.style.height = '24px';
             starImage.style.boxSizing = 'border-box';
@@ -177,6 +209,7 @@ class StarPlugin {
                 }
                 BdApi.saveData('StarPlugin', 'starredChannels', this.activeChannels);
             });
+    
             iconContainer.innerHTML = '';
             iconContainer.appendChild(starImage);
         });
@@ -197,7 +230,7 @@ class StarPlugin {
             case 'mp3':
                 return 'audio/mpeg';
             default:
-                return 'application/octet-stream'; 
+                return 'application/octet-stream';
         }
     }
 
@@ -206,9 +239,9 @@ class StarPlugin {
         if (this.cachedImages[filename]) {
             return this.cachedImages[filename];
         } else {
-            console.error(`File ${filename} is not cached. Initiating file download again...`);
-            this.downloadAndCacheFiles(); 
-            return url; 
+            console.error(`file ${filename} is not stored. download attempt...`);
+            this.downloadAndCacheFiles();
+            return url;
         }
     }
 
@@ -224,7 +257,7 @@ class StarPlugin {
             if (this.activeChannels[channelId] && this.activeChannels[channelId].text === "false") {
                 this.AUDIO_URL.play();
                 const channelName = this.getChannelNameById(channelId);
-                if (channelName) {;
+                if (channelName) {
                     this.showVoiceChannelNotification(channelName);
                 } else {
                 }
@@ -250,17 +283,19 @@ class StarPlugin {
     }
     
     getChannelNameById(channelId) {
-        const ChannelStore = BdApi.findModuleByProps("getChannel");
+        const ChannelStore = BdApi.Webpack.getStore("ChannelStore");
+        if (!ChannelStore) {
+            return null;
+        }
         const channel = ChannelStore.getChannel(channelId);
         if (!channel) {
-            console.error(`Cannot find channel for ID: ${channelId}`);
+            return null;
         }
-        return channel ? channel.name : null;
+        return channel.name;
     }
 
     showNotification(channelName) {
         if (!("Notification" in window)) {
-            console.error("This browser does not support system notifications.");
             return;
         }
         if (Notification.permission === "granted") {
@@ -276,7 +311,6 @@ class StarPlugin {
 	
     showVoiceChannelNotification(channelName) {
         if (!("Notification" in window)) {
-            console.error("This browser does not support system notifications.");
             return;
         }
         if (Notification.permission === "granted") {
@@ -292,7 +326,7 @@ class StarPlugin {
     }
     
     createVoiceChannelNotification(channelName) {
-        const notification = new Notification("Voice channel update", {
+        const notification = new Notification("Aktualizacja kanału głosowego", {
             body: `Someone has join the voice channel: ${channelName}`,
             silent: true
         });
@@ -319,24 +353,33 @@ class StarPlugin {
     }
 
     createNotification(channelName) {
-        const notification = new Notification("new message", {
-            body: `You have a new message on the channel ${channelName}.`,
+        const notification = new Notification("Nowa wiadomość", {
+            body: `You have a new message on the channel: ${channelName}`,
             silent: true
         });
         notification.onclick = () => {
             window.focus();
-            const channel = BdApi.findModuleByProps("getChannel").getChannel(this.activeChannelId);
+            const ChannelStore = BdApi.Webpack.getStore("ChannelStore");
+            if (!ChannelStore) {
+                return;
+            }
+            const channel = ChannelStore.getChannel(this.activeChannelId);
+            if (!channel) {
+                return;
+            }
             const serverId = channel.guild_id;
             const serverIcon = document.querySelector(`div[data-list-item-id="guildsnav___${serverId}"]`);
-            if (serverIcon) {
-                serverIcon.click();
-                setTimeout(() => {
-                    const channelLink = document.querySelector(`a[data-list-item-id="channels___${this.activeChannelId}"]`);
-                    if (channelLink) {
-                        channelLink.click();
-                    }
-                }, 200);
+            if (!serverIcon) {
+                return;
             }
+            serverIcon.click();
+            setTimeout(() => {
+                const channelLink = document.querySelector(`a[data-list-item-id="channels___${this.activeChannelId}"]`);
+                if (channelLink) {
+                    channelLink.click();
+                } else {
+                }
+            }, 200);
         };
     }
 
@@ -346,82 +389,71 @@ class StarPlugin {
     }
 
     getCurrentServerName() {
-        const serverNameElement = document.querySelector('.lineClamp1__0ec05.name_c08dbc');
-        return serverNameElement ? serverNameElement.textContent : null;
+        const serverId = BdApi.findModuleByProps("getLastSelectedGuildId").getLastSelectedGuildId();
+        if (!serverId) {
+            return null;
+        }
+        const serverName = this.getGuildNameById(serverId);
+        return serverName;
     }
-
+	
+    getGuildNameById(serverid) {
+        if (!serverid) {
+            return null;
+        }
+        const trimmedGuildId = serverid.trim();
+        const GuildStore = BdApi.Webpack.getStore("GuildStore");
+        if (!GuildStore) {
+            return null;
+        }
+        const guild = GuildStore.getGuild(trimmedGuildId);
+        if (guild) {
+            return guild.name;
+        } else {
+            return null;
+        }
+    }
+	
+    patchContextMenu() {
+        BdApi.ContextMenu.patch("guild-context", (retVal, props) => {
+            const serverId = props.guildId || (props.guild && props.guild.id);
+            if (!serverId) {
+                return;
+            }
+            const guildName = this.getGuildNameById(serverId); 
+            if (!guildName) {
+                return;
+            }
+            const isWhitelisted = this.whitelistedServers.includes(guildName);
+            const label = isWhitelisted ? "Whitelist Remove" : "Whitelist Add";
+            const action = isWhitelisted ? () => this.removeFromWhitelist(guildName) : () => this.addToWhitelist(guildName);
+            const menuItem = BdApi.ContextMenu.buildItem({
+                type: "text",
+                label: label,
+                action: () => {
+                    action();
+                }
+            });
+    
+            retVal.props.children.push(menuItem);
+        });
+    }
+	
     addToWhitelist(serverName) {
-        serverName = serverName.trim();
         if (!this.whitelistedServers.includes(serverName)) {
             this.whitelistedServers.push(serverName);
             BdApi.saveData('StarPlugin', 'whitelistedServers', this.whitelistedServers);
+        } else {
         }
     }
-
+    
     removeFromWhitelist(serverName) {
-        serverName = serverName.trim();
         const index = this.whitelistedServers.indexOf(serverName);
         if (index !== -1) {
             this.whitelistedServers.splice(index, 1);
             BdApi.saveData('StarPlugin', 'whitelistedServers', this.whitelistedServers);
-        }
-    }
-
-    addContextMenuOption() {
-        window.addEventListener("contextmenu", (event) => {
-            const target = event.target.closest('[role="treeitem"]');
-            if (target && target.getAttribute('data-list-item-id').includes('guildsnav___')) {
-                const observer = new MutationObserver((mutations, obs) => {
-                    for (let mutation of mutations) {
-                        for (let node of mutation.addedNodes) {
-                            if (node instanceof HTMLElement && node.matches('.layerContainer_d5a653 .theme-dark.layer_ec16dd')) {
-                                this.addWhitelistButtonToContextMenu(target.getAttribute('aria-label'));
-                                obs.disconnect();
-                                return;
-                            }
-                        }
-                    }
-                });
-                observer.observe(document, {
-                    childList: true,
-                    subtree: true
-                });
-            }
-        }, true);
-    }
-
-    addWhitelistButtonToContextMenu(serverName) {
-        serverName = serverName.trim();
-        const now = Date.now();
-        if (now - this.lastContextMenuUpdate < 500) return; 
-        this.lastContextMenuUpdate = now;
-        const contextMenu = document.querySelector('div[role="menu"]');
-        if (!contextMenu) {
-            return;
-        }
-        const existingMenuItem = contextMenu.querySelector('.starplugin-whitelist-button');
-        if (existingMenuItem) {
-            existingMenuItem.remove();
-        }
-        const menuItem = document.createElement('div');
-        menuItem.classList.add('item__183e8', 'labelContainer_bc2861', 'colorDefault__0b482', 'starplugin-whitelist-button');
-        menuItem.role = "menuitem";
-        menuItem.tabIndex = -1;
-        menuItem.setAttribute('data-menu-item', 'true');
-        if (this.whitelistedServers.includes(serverName)) {
-            menuItem.innerHTML = '<div class="label-3CEiKJ">Whitelist Remove</div>';
-            menuItem.addEventListener('click', () => {
-                this.removeFromWhitelist(serverName);
-                this.addWhitelistButtonToContextMenu(serverName);
-            });
         } else {
-            menuItem.innerHTML = '<div class="label-3CEiKJ">Whitelist Add</div>';
-            menuItem.addEventListener('click', () => {
-                this.addToWhitelist(serverName);
-                this.addWhitelistButtonToContextMenu(serverName);
-            });
         }
-        contextMenu.insertBefore(menuItem, contextMenu.firstChild);
     }
 	
     getSettingsPanel() {
@@ -431,13 +463,20 @@ class StarPlugin {
         markVoiceChannelsCheckbox.type = "checkbox";
         markVoiceChannelsCheckbox.checked = this.markVoiceChannels;
         markVoiceChannelsCheckbox.disabled = true;
+        markVoiceChannelsCheckbox.onchange = (e) => {
+            this.markVoiceChannels = e.target.checked;
+            this.saveSettings();
+			this.loadSettings();
+        };
         const label = document.createElement("label");
         label.style.color = "white";
         label.style.marginBottom = "30px";
+        
         const labelText = document.createElement("span");
         labelText.style.textDecoration = "line-through";
         labelText.style.textDecorationColor = "black";
         labelText.textContent = " Mark voice channels ";
+        
         label.appendChild(markVoiceChannelsCheckbox);
         label.appendChild(labelText);
         label.appendChild(document.createElement("span")).textContent = "Coming Soon";
@@ -448,6 +487,7 @@ class StarPlugin {
 		serverListTitle.style.marginTop = "20px";
         serverListTitle.style.marginBottom = "20px";
         panel.appendChild(serverListTitle);
+    
         this.whitelistedServers.forEach(serverName => {
             const serverItem = document.createElement("div");
             serverItem.textContent = serverName;
@@ -456,6 +496,7 @@ class StarPlugin {
             serverItem.style.alignItems = "center";
             serverItem.style.justifyContent = "space-between";
             serverItem.style.marginBottom = "10px";
+    
             const trashIcon = document.createElement("img");
             trashIcon.src = TRASH_ICON_URL;
             trashIcon.style.cursor = "pointer";
@@ -472,6 +513,7 @@ class StarPlugin {
             trashIcon.addEventListener("mouseout", () => {
                 serverItem.style.color = "white";
             });
+    
             serverItem.appendChild(trashIcon);
             panel.appendChild(serverItem);
         });
@@ -480,6 +522,7 @@ class StarPlugin {
         channelListTitle.style.color = "white";
         channelListTitle.style.marginBottom = "20px";
         panel.appendChild(channelListTitle);
+    
         Object.keys(this.activeChannels).forEach(channelId => {
             const channelItem = document.createElement("div");
             channelItem.textContent = this.getChannelNameById(channelId);
@@ -488,6 +531,7 @@ class StarPlugin {
             channelItem.style.alignItems = "center";
             channelItem.style.justifyContent = "space-between";
             channelItem.style.marginBottom = "10px";
+    
             const trashIcon = document.createElement("img");
             trashIcon.src = TRASH_ICON_URL;
             trashIcon.style.cursor = "pointer";
@@ -505,9 +549,11 @@ class StarPlugin {
             trashIcon.addEventListener("mouseout", () => {
                 channelItem.style.color = "white";
             });
+    
             channelItem.appendChild(trashIcon);
             panel.appendChild(channelItem);
         });
+    
         return panel;
     }
 
@@ -524,4 +570,5 @@ class StarPlugin {
         });
     }
 }
+window.myPluginInstance = new StarPlugin();
 module.exports = StarPlugin;

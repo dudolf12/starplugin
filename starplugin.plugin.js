@@ -1,4 +1,4 @@
-//META{"name":"StarPlugin","displayName":"StarPlugindev","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"1.02","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
+//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"1.02","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
 
 const ZeresPluginLibrary = BdApi.Plugins.get("ZeresPluginLibrary");
 if (!ZeresPluginLibrary) {

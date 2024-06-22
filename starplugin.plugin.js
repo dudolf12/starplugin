@@ -1,4 +1,4 @@
-//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"1.02","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
+//META{"name":"StarPlugin","displayName":"StarPlugin","source":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","version":"1.03","updateUrl":"https://github.com/dudolf12/starplugin/blob/main/starplugin.plugin.js","author":"dudolf","description":"adds the ability to add channels to favorites"}*//
 
 const ZeresPluginLibrary = BdApi.Plugins.get("ZeresPluginLibrary");
 if (!ZeresPluginLibrary) {
@@ -82,14 +82,16 @@ class StarPlugin {
     }
     
     stop() {
-        Patcher.unpatchAll();
-        document.querySelectorAll('.star-image').forEach(el => el.remove());
-        if (this.interval) clearInterval(this.interval);
+        if (this.interval) {
+            clearInterval(this.interval);
+            this.interval = null;
+        }
         if (this.mutationObserver) {
             this.mutationObserver.disconnect();
             this.mutationObserver = null;
         }
-        const Dispatcher = BdApi.findModuleByProps("dispatch", "unsubscribe");
+        document.querySelectorAll('.star-image').forEach(el => el.remove());
+        const Dispatcher = BdApi.findModuleByProps("dispatch", "subscribe");
         if (Dispatcher) {
             Dispatcher.unsubscribe("VOICE_STATE_UPDATE", this.voiceStateUpdateHandler);
         }
@@ -131,10 +133,10 @@ class StarPlugin {
     }
 	
     setupMutationObserver() {
-        const targetSelector = 'div.scroller__1f498.scrollerBase_f742b2';
+        const targetSelector = 'div.scroller_c43953.scrollerBase_eed6a8';
         const targetNode = document.querySelector(targetSelector);
         if (!targetNode) {
-            setTimeout(() => this.setupMutationObserver(), 1000);
+            setTimeout(() => this.setupMutationObserver(), 10);
             return;
         } else {
         }
@@ -174,7 +176,7 @@ class StarPlugin {
     
         let channels = document.querySelectorAll('[data-list-item-id^="channels___"]');
         channels.forEach(channel => {
-            const iconContainer = channel.querySelector('.iconContainer__6a580');
+            const iconContainer = channel.querySelector('.iconContainer_d8bfb3');
             if (!iconContainer) {
                 return;
             }
@@ -326,60 +328,62 @@ class StarPlugin {
     }
     
     createVoiceChannelNotification(channelName) {
-        const notification = new Notification("Aktualizacja kanału głosowego", {
-            body: `Someone has join the voice channel: ${channelName}`,
+        const notification = new Notification("Update VC", {
+            body: `Someone has joined the voice channel: ${channelName}`,
             silent: true
         });
-        notification.onclick = () => {
-            window.focus();
-            const channel = BdApi.findModuleByProps("getChannel").getChannel(this.activeChannelId);
-            if (!channel) {
-                return;
-            }
-            const serverId = channel.guild_id;
-            const serverIcon = document.querySelector(`div[data-list-item-id="guildsnav___${serverId}"]`);
-            if (!serverIcon) {
-                return;
-            }
-            serverIcon.click();
-            setTimeout(() => {
-                const channelLink = document.querySelector(`a[data-list-item-id="channels___${this.activeChannelId}"]`);
-                if (channelLink) {
-                    channelLink.click();
-                } else {
-                }
-            }, 200);
-        };
-    }
 
-    createNotification(channelName) {
-        const notification = new Notification("Nowa wiadomość", {
-            body: `You have a new message on the channel: ${channelName}`,
-            silent: true
-        });
         notification.onclick = () => {
             window.focus();
-            const ChannelStore = BdApi.Webpack.getStore("ChannelStore");
+            const ChannelStore = BdApi.Webpack.getModule(m => m?.getChannel && m?.getDMFromUserId);
             if (!ChannelStore) {
+                console.error("ChannelStore module not found.");
                 return;
             }
             const channel = ChannelStore.getChannel(this.activeChannelId);
             if (!channel) {
+                console.error("Channel not found.");
                 return;
             }
             const serverId = channel.guild_id;
-            const serverIcon = document.querySelector(`div[data-list-item-id="guildsnav___${serverId}"]`);
-            if (!serverIcon) {
+            this.navigateToChannel(serverId, this.activeChannelId);
+        };
+    }
+
+    getNavigationModule() {
+        return BdApi.Webpack.getModule(m => m?.getHistory);
+    }
+
+    navigateToChannel(serverId, channelId) {
+        const NavigationModule = this.getNavigationModule();
+        if (NavigationModule) {
+            const history = NavigationModule.getHistory();
+            history.push(`/channels/${serverId}/${channelId}`);
+        } else {
+            console.error("Navigation module not found.");
+        }
+    }
+
+    createNotification(channelName) {
+        const notification = new Notification("New message", {
+            body: `You have a new message on the channel: ${channelName}`,
+            silent: true
+        });
+
+        notification.onclick = () => {
+            window.focus();
+            const ChannelStore = BdApi.Webpack.getModule(m => m?.getChannel && m?.getDMFromUserId);
+            if (!ChannelStore) {
+                console.error("ChannelStore module not found.");
                 return;
             }
-            serverIcon.click();
-            setTimeout(() => {
-                const channelLink = document.querySelector(`a[data-list-item-id="channels___${this.activeChannelId}"]`);
-                if (channelLink) {
-                    channelLink.click();
-                } else {
-                }
-            }, 200);
+            const channel = ChannelStore.getChannel(this.activeChannelId);
+            if (!channel) {
+                console.error("Channel not found.");
+                return;
+            }
+            const serverId = channel.guild_id;
+            this.navigateToChannel(serverId, this.activeChannelId);
         };
     }
 
